@@ -1,12 +1,14 @@
 import time
 import requests
-import pandas as pd
+import csv
+import io
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Painel de Tarefas - Grupo Mirantes")
 
+# Permite acesso do seu HTML/Navegador sem bloqueios
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,12 +27,18 @@ TEMPO_CACHE_SEGUNDOS = 15
 def carregar_dados_do_csv():
     global CACHE_TAREFAS, ULTIMA_ATUALIZACAO
     try:
-        df = pd.read_csv(CSV_URL, dtype=str).fillna("")
+        response = requests.get(CSV_URL, timeout=10)
+        response.encoding = 'utf-8'
+        
+        csv_file = io.StringIO(response.text)
+        reader = csv.DictReader(csv_file)
+        
         tasks = []
-        for _, row in df.iterrows():
-            if str(row.get("ID", "")).strip():
+        for row in reader:
+            task_id = str(row.get("ID", "")).strip()
+            if task_id:
                 tasks.append({
-                    "id": str(row.get("ID", "")).strip(),
+                    "id": task_id,
                     "company": str(row.get("Empresa", "")).strip(),
                     "title": str(row.get("Atividade", "")).strip(),
                     "assignee": str(row.get("Responsável", "")).strip(),
@@ -41,11 +49,12 @@ def carregar_dados_do_csv():
                     "completedAt": str(row.get("ConcluidoEm", "")).strip(),
                     "obs": str(row.get("Observacoes", "")).strip()
                 })
+        
         CACHE_TAREFAS = tasks
         ULTIMA_ATUALIZACAO = time.time()
-        print(f"[{time.strftime('%H:%M:%S')}] Cache atualizado: {len(tasks)} tarefas.")
+        print(f"[{time.strftime('%H:%M:%S')}] Cache atualizado: {len(tasks)} tarefas na memória.")
     except Exception as e:
-        print("Erro ao atualizar o cache:", e)
+        print("Erro ao atualizar o cache do CSV:", e)
 
 @app.on_event("startup")
 def startup_event():
